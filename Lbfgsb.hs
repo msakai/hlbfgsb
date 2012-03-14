@@ -102,7 +102,7 @@ foreign import ccall setulb_
     -> Ptr Double  -- g[n] - gradient
     -> Ptr Double  -- factr - accuracy factor
     -> Ptr Double  -- pgtol - stop condition gradient tolerance
-    -> Ptr Int     -- wa[(2m+5)n + 11m^2 + 8m] - working array
+    -> Ptr Double  -- wa[(2m+5)n + 11m^2 + 8m] - working array
     -> Ptr Int     -- iwa[3n] - working array
     -> Ptr Word8   -- task[60]
     -> Ptr Int     -- iprint - output
