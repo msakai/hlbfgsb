@@ -1,4 +1,3 @@
-{-# LANGUAGE CPP #-}
 module Lbfgsb
 
 where
@@ -10,9 +9,7 @@ import Data.Maybe
 import qualified Data.Vector.Generic as V
 import qualified Data.Vector as BV
 import qualified Data.Vector.Storable as SV
-#define _proc_ (alloca, with, allocaArray, withArray)
-import Foreign hiding _proc_
-import Alloc _proc_
+import Foreign
 
 readTask :: Int -> Ptr Word8 -> IO String
 readTask n a = do
