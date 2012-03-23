@@ -47,24 +47,24 @@ lbfgsb :: Int                                               -- m
        -> [(Maybe Double, Maybe Double)]                    -- bounds
        -> (SV.Vector Double -> (Double, SV.Vector Double))  -- fg
        -> IO (SV.Vector Double)
-lbfgsb m factr pgtol x bounds fg = do
-    with n $ \n' -> do
-    with m $ \m' -> do
-    withArray (V.toList x) $ \x' -> do
-    withArray ls $ \l -> do
-    withArray us $ \u -> do
-    withArray nbds $ \nbd -> do
-    alloca $ \f -> do
-    allocaArray n $ \g -> do
-    with factr $ \factr' -> do
-    with pgtol $ \pgtol' -> do
-    allocaArray ((2*m+5)*n + 11*m*m + 8*m) $ \wa -> do
-    allocaArray (3*n + 470) $ \iwa -> do
-    withArray sTART $ \task -> do
-    with 1 $ \iprint -> do
-    allocaArray 60 $ \csave -> do
-    allocaArray 4 $ \lsave -> do
-    allocaArray 44 $ \isave -> do
+lbfgsb m factr pgtol x bounds fg =
+    with n $ \n' ->
+    with m $ \m' ->
+    withArray (V.toList x) $ \x' ->
+    withArray ls $ \l ->
+    withArray us $ \u ->
+    withArray nbds $ \nbd ->
+    alloca $ \f ->
+    allocaArray n $ \g ->
+    with factr $ \factr' ->
+    with pgtol $ \pgtol' ->
+    allocaArray ((2*m+5)*n + 11*m*m + 8*m) $ \wa ->
+    allocaArray (3*n + 470) $ \iwa ->
+    withArray sTART $ \task ->
+    with (-1) $ \iprint ->
+    allocaArray 60 $ \csave ->
+    allocaArray 4 $ \lsave ->
+    allocaArray 44 $ \isave ->
     allocaArray 29 $ \dsave -> do
     res <- loop n' m' x' l u nbd f g factr' pgtol' wa iwa task iprint csave lsave isave dsave
     return res
