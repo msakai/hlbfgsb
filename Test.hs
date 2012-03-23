@@ -1,4 +1,4 @@
-import Control.Arrow ((&&&),(***))
+import Control.Arrow (second, (***))
 import qualified Data.Vector.Generic as V
 import Numeric.GSL.Minimization
 import System.IO
@@ -8,9 +8,9 @@ import Lbfgsb
 
 fg [x,y] = ((x-4)*(x-3) + (y-2)*(y-1), [(x-4)+(x-3), (y-2)+(y-1)])
 
-vectorize fg' = (id *** V.fromList) . fg' . V.toList
+vectorize fg' = second V.fromList . fg' . V.toList
 
-neg = (negate *** map negate )
+neg = negate *** map negate
 
 test :: IO ()
 test = do
