@@ -1,0 +1,24 @@
+name:                hlbfgsb
+version:             0.1.0.0
+synopsis:            Haskell binding to L-BFGS-B version 3.0
+-- description:
+homepage:            https://people.ksp.sk/~ivan/hlbfgsb
+-- license:
+license-file:        LICENSE
+author:              Ivan Labáth
+maintainer:          ivan@hlbfgsb.ksp.sk
+-- copyright:
+category:            Math
+build-type:          Simple
+cabal-version:       >=1.10
+
+library
+  exposed-modules:     Lbfgsb
+  -- other-modules:
+  default-language: Haskell2010
+  build-depends: base,
+                 vector >= 0.9
+  ld-options: blas.o,
+             lbfgsb.o,
+             linpack.o,
+             timer.o
