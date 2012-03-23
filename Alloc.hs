@@ -9,7 +9,7 @@ import Foreign.Ptr
 import Foreign.Storable
 
 alloca :: Storable a => (Ptr a -> IO b) -> IO b
-alloca f = allocaArray 1 f
+alloca = allocaArray 1
 
 with :: Storable a => a -> (Ptr a -> IO b) -> IO b
 with x = withArray [x]
