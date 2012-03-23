@@ -15,9 +15,9 @@ neg = negate *** map negate
 test :: IO ()
 test = do
     hSetBuffering stdout NoBuffering
---    print =<< lbfgsb 3 1e3 1e-10 (V.fromList [47, 47]) [] (vectorize (neg . fg))
+    print =<< lbfgsb 3 1e3 1e-10 (V.fromList [47, 47]) [] (vectorize fg)
 --    print $ minimize NMSimplex2 1e-6 100 [100,100] (fst . fg) [47,47]
-    print =<< lbfgsb 5 1e7 1e-5 (V.fromList . replicate 25 $ 3) (map bnd [1..25]) (vectorize (p fg2))
+--    print =<< lbfgsb 5 1e7 1e-5 (V.fromList . replicate 25 $ 3) (map bnd [1..25]) (vectorize (p fg2))
 
 bnd n |     odd n = (Just 1, Just 100)
       | otherwise = (Just 1, Just 100)
