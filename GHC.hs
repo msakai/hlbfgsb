@@ -74,29 +74,25 @@ module GHC (
  ) where
 
 import Distribution.Simple.GHC (
---        configure, getInstalledPackages,
+        {-configure,-} getInstalledPackages,
         {-buildLib,-} buildExe,
         {-installLib,-} installExe,
 --        libAbiHash,
 --        registerPackage,
---        ghcOptions,
---        ghcVerbosityOptions,
---        ghcPackageDbOptions,
+        ghcOptions,
+        ghcVerbosityOptions,
+        ghcPackageDbOptions,
         ghcLibDir,
     )
 
-import qualified IPI641 as IPI641
-import qualified IPI642 as IPI642
 import Distribution.Compat.ReadP
 import Distribution.PackageDescription as PD
          ( PackageDescription(..), BuildInfo(..)
-         , Library(..), libModules, hcOptions, usedExtensions, allExtensions )
+         , Library(..), libModules, hcOptions, allExtensions )
 import Distribution.InstalledPackageInfo
          ( InstalledPackageInfo )
 import qualified Distribution.InstalledPackageInfo as InstalledPackageInfo
                                 ( InstalledPackageInfo_(..) )
-import Distribution.Simple.PackageIndex (PackageIndex)
-import qualified Distribution.Simple.PackageIndex as PackageIndex
 import Distribution.Simple.LocalBuildInfo
          ( LocalBuildInfo(..), ComponentLocalBuildInfo(..)
          , absoluteInstallDirs )
@@ -104,7 +100,7 @@ import Distribution.Simple.InstallDirs hiding ( absoluteInstallDirs )
 import Distribution.Simple.BuildPaths
 import Distribution.Simple.Utils
 import Distribution.Package
-         ( PackageIdentifier, Package(..), PackageName(..) )
+         ( PackageIdentifier, Package(..) )
 import qualified Distribution.ModuleName as ModuleName
 import Distribution.Simple.Program
          ( Program(..), ConfiguredProgram(..), ProgramConfiguration, ProgArg
@@ -135,7 +131,6 @@ import Control.Monad            ( unless, when, liftM )
 import Data.Char                ( isSpace )
 import Data.List
 import Data.Maybe               ( catMaybes )
-import Data.Monoid              ( Monoid(..) )
 import System.Directory
          ( removeFile, getDirectoryContents, doesFileExist
          , getTemporaryDirectory )
@@ -469,116 +464,6 @@ oldLanguageExtensions =
     ,(ConstrainedClassMethods    , fglasgowExts)
     ]
 
-getInstalledPackages :: Verbosity -> PackageDBStack -> ProgramConfiguration
-                     -> IO PackageIndex
-getInstalledPackages verbosity packagedbs conf = do
-  checkPackageDbStack packagedbs
-  pkgss <- getInstalledPackages' verbosity packagedbs conf
-  topDir <- ghcLibDir' verbosity ghcProg
-  let indexes = [ PackageIndex.fromList (map (substTopDir topDir) pkgs)
-                | (_, pkgs) <- pkgss ]
-  return $! hackRtsPackage (mconcat indexes)
-
-  where
-    -- On Windows, various fields have $topdir/foo rather than full
-    -- paths. We need to substitute the right value in so that when
-    -- we, for example, call gcc, we have proper paths to give it
-    Just ghcProg = lookupProgram ghcProgram conf
-
-    hackRtsPackage index =
-      case PackageIndex.lookupPackageName index (PackageName "rts") of
-        [(_,[rts])]
-           -> PackageIndex.insert (removeMingwIncludeDir rts) index
-        _  -> index -- No (or multiple) ghc rts package is registered!!
-                    -- Feh, whatever, the ghc testsuite does some crazy stuff.
-
-ghcLibDir' :: Verbosity -> ConfiguredProgram -> IO FilePath
-ghcLibDir' verbosity ghcProg =
-    (reverse . dropWhile isSpace . reverse) `fmap`
-     rawSystemProgramStdout verbosity ghcProg ["--print-libdir"]
-
-checkPackageDbStack :: PackageDBStack -> IO ()
-checkPackageDbStack (GlobalPackageDB:rest)
-  | GlobalPackageDB `notElem` rest = return ()
-checkPackageDbStack _ =
-  die $ "GHC.getInstalledPackages: the global package db must be "
-     ++ "specified first and cannot be specified multiple times"
-
--- GHC < 6.10 put "$topdir/include/mingw" in rts's installDirs. This
--- breaks when you want to use a different gcc, so we need to filter
--- it out.
-removeMingwIncludeDir :: InstalledPackageInfo -> InstalledPackageInfo
-removeMingwIncludeDir pkg =
-    let ids = InstalledPackageInfo.includeDirs pkg
-        ids' = filter (not . ("mingw" `isSuffixOf`)) ids
-    in pkg { InstalledPackageInfo.includeDirs = ids' }
-
--- | Get the packages from specific PackageDBs, not cumulative.
---
-getInstalledPackages' :: Verbosity -> [PackageDB] -> ProgramConfiguration
-                     -> IO [(PackageDB, [InstalledPackageInfo])]
-getInstalledPackages' verbosity packagedbs conf
-  | ghcVersion >= Version [6,9] [] =
-  sequence
-    [ do pkgs <- HcPkg.dump verbosity ghcPkgProg packagedb
-         return (packagedb, pkgs)
-    | packagedb <- packagedbs ]
-
-  where
-    Just ghcPkgProg = lookupProgram ghcPkgProgram conf
-    Just ghcProg    = lookupProgram ghcProgram conf
-    Just ghcVersion = programVersion ghcProg
-
-getInstalledPackages' verbosity packagedbs conf = do
-    str <- rawSystemProgramStdoutConf verbosity ghcPkgProgram conf ["list"]
-    let pkgFiles = [ init line | line <- lines str, last line == ':' ]
-        dbFile packagedb = case (packagedb, pkgFiles) of
-          (GlobalPackageDB, global:_)      -> return $ Just global
-          (UserPackageDB,  _global:user:_) -> return $ Just user
-          (UserPackageDB,  _global:_)      -> return $ Nothing
-          (SpecificPackageDB specific, _)  -> return $ Just specific
-          _ -> die "cannot read ghc-pkg package listing"
-    pkgFiles' <- mapM dbFile packagedbs
-    sequence [ withFileContents file $ \content -> do
-                  pkgs <- readPackages file content
-                  return (db, pkgs)
-             | (db , Just file) <- zip packagedbs pkgFiles' ]
-  where
-    -- Depending on the version of ghc we use a different type's Read
-    -- instance to parse the package file and then convert.
-    -- It's a bit yuck. But that's what we get for using Read/Show.
-    readPackages
-      | ghcVersion >= Version [6,4,2] []
-      = \file content -> case reads content of
-          [(pkgs, _)] -> return (map IPI642.toCurrent pkgs)
-          _           -> failToRead file
-      | otherwise
-      = \file content -> case reads content of
-          [(pkgs, _)] -> return (map IPI641.toCurrent pkgs)
-          _           -> failToRead file
-    Just ghcProg = lookupProgram ghcProgram conf
-    Just ghcVersion = programVersion ghcProg
-    failToRead file = die $ "cannot read ghc package database " ++ file
-
-substTopDir :: FilePath -> InstalledPackageInfo -> InstalledPackageInfo
-substTopDir topDir ipo
- = ipo {
-       InstalledPackageInfo.importDirs
-           = map f (InstalledPackageInfo.importDirs ipo),
-       InstalledPackageInfo.libraryDirs
-           = map f (InstalledPackageInfo.libraryDirs ipo),
-       InstalledPackageInfo.includeDirs
-           = map f (InstalledPackageInfo.includeDirs ipo),
-       InstalledPackageInfo.frameworkDirs
-           = map f (InstalledPackageInfo.frameworkDirs ipo),
-       InstalledPackageInfo.haddockInterfaces
-           = map f (InstalledPackageInfo.haddockInterfaces ipo),
-       InstalledPackageInfo.haddockHTMLs
-           = map f (InstalledPackageInfo.haddockHTMLs ipo)
-   }
-    where f ('$':'t':'o':'p':'d':'i':'r':rest) = topDir ++ rest
-          f x = x
-
 
 -- Utilities for fortran
 
@@ -867,43 +752,6 @@ constructGHCCmdLine lbi bi clbi odir verbosity =
         -- Unsupported extensions have already been checked by configure
      ++ ghcOptions lbi bi clbi odir
 
-ghcVerbosityOptions :: Verbosity -> [String]
-ghcVerbosityOptions verbosity
-     | verbosity >= deafening = ["-v"]
-     | verbosity >= normal    = []
-     | otherwise              = ["-w", "-v0"]
-
-ghcOptions :: LocalBuildInfo -> BuildInfo -> ComponentLocalBuildInfo
-           -> FilePath -> [String]
-ghcOptions lbi bi clbi odir
-     =  ["-hide-all-packages"]
-     ++ ["-fbuilding-cabal-package" | ghcVer >= Version [6,11] [] ]
-     ++ ghcPackageDbOptions (withPackageDB lbi)
-     ++ ["-split-objs" | splitObjs lbi ]
-     ++ ["-i"]
-     ++ ["-i" ++ odir]
-     ++ ["-i" ++ l | l <- nub (hsSourceDirs bi)]
-     ++ ["-i" ++ autogenModulesDir lbi]
-     ++ ["-I" ++ autogenModulesDir lbi]
-     ++ ["-I" ++ odir]
-     ++ ["-I" ++ dir | dir <- PD.includeDirs bi]
-     ++ ["-optP" ++ opt | opt <- cppOptions bi]
-     ++ [ "-optP-include", "-optP"++ (autogenModulesDir lbi </> cppHeaderName) ]
-     ++ [ "-#include \"" ++ inc ++ "\"" | ghcVer < Version [6,11] []
-                                        , inc <- PD.includes bi ]
-     ++ [ "-odir",  odir, "-hidir", odir ]
-     ++ concat [ ["-stubdir", odir] | ghcVer >=  Version [6,8] [] ]
-     ++ ghcPackageFlags lbi clbi
-     ++ (case withOptimization lbi of
-           NoOptimisation      -> []
-           NormalOptimisation  -> ["-O"]
-           MaximumOptimisation -> ["-O2"])
-     ++ hcOptions GHC bi
-     ++ languageToFlags   (compiler lbi) (defaultLanguage bi)
-     ++ extensionsToFlags (compiler lbi) (usedExtensions bi)
-    where
-      ghcVer = compilerVersion (compiler lbi)
-
 ghcPackageFlags :: LocalBuildInfo -> ComponentLocalBuildInfo -> [String]
 ghcPackageFlags lbi clbi
   | ghcVer >= Version [6,11] []
@@ -914,17 +762,6 @@ ghcPackageFlags lbi clbi
                        | (_, pkgid)  <- componentPackageDeps clbi ]
     where
       ghcVer = compilerVersion (compiler lbi)
-
-ghcPackageDbOptions :: PackageDBStack -> [String]
-ghcPackageDbOptions dbstack = case dbstack of
-  (GlobalPackageDB:UserPackageDB:dbs) -> concatMap specific dbs
-  (GlobalPackageDB:dbs)               -> "-no-user-package-conf"
-                                       : concatMap specific dbs
-  _                                   -> ierror
-  where
-    specific (SpecificPackageDB db) = [ "-package-conf", db ]
-    specific _ = ierror
-    ierror     = error ("internal error: unexpected package db stack: " ++ show dbstack)
 
 constructCcCmdLine :: LocalBuildInfo -> BuildInfo -> ComponentLocalBuildInfo
                    -> FilePath -> FilePath -> Verbosity -> Bool -> Bool
