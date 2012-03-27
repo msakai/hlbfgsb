@@ -74,7 +74,7 @@ module Config.GHC (
  ) where
 
 import Distribution.Simple.GHC (
-        {-configure,-} getInstalledPackages,
+        configure, getInstalledPackages,
         {-buildLib,-} buildExe,
         installLib, installExe,
         libAbiHash,
@@ -87,14 +87,9 @@ import Distribution.Simple.GHC (
 
 import Config.Program
 
-import Distribution.Compat.ReadP
 import Distribution.PackageDescription as PD
          ( PackageDescription(..), BuildInfo(..)
          , Library(..), libModules, hcOptions, allExtensions )
-import Distribution.InstalledPackageInfo
-         ( InstalledPackageInfo )
-import qualified Distribution.InstalledPackageInfo as InstalledPackageInfo
-                                ( InstalledPackageInfo_(..) )
 import Distribution.Simple.LocalBuildInfo
          ( LocalBuildInfo(..), ComponentLocalBuildInfo(..)
          , absoluteInstallDirs )
@@ -110,362 +105,29 @@ import Distribution.Simple.Program
          , rawSystemProgramStdout, rawSystemProgramStdoutConf
          , requireProgramVersion, requireProgram, getProgramOutput
          , userMaybeSpecifyPath, programPath, lookupProgram, addKnownProgram
-         , ghcProgram, ghcPkgProgram, hsc2hsProgram
-         , arProgram, ranlibProgram, ldProgram
-         , gccProgram )
-import qualified Distribution.Simple.Program.HcPkg as HcPkg
+         , ghcProgram, ghcPkgProgram, arProgram, ranlibProgram, ldProgram )
 import qualified Distribution.Simple.Program.Ar    as Ar
 import qualified Distribution.Simple.Program.Ld    as Ld
 import Distribution.Simple.Compiler
-         ( CompilerFlavor(..), CompilerId(..), Compiler(..), compilerVersion
-         , OptimisationLevel(..), PackageDB(..), PackageDBStack
-         , Flag, languageToFlags, extensionsToFlags )
+         ( CompilerFlavor(..), Compiler(..), compilerVersion
+         , OptimisationLevel(..) )
 import Distribution.Version
-         ( Version(..), anyVersion, orLaterVersion )
+         ( Version(..) )
 import Distribution.System
          ( OS(..), buildOS )
 import Distribution.Verbosity
 import Distribution.Text
-         ( display, simpleParse )
-import Language.Haskell.Extension (Language(..), Extension(..), KnownExtension(..))
+         ( display )
+import Language.Haskell.Extension (Extension(..), KnownExtension(..))
 
-import Control.Monad            ( unless, when, liftM )
+import Control.Monad            ( unless, when )
 import Data.Char                ( isSpace )
-import Data.List
 import Data.Maybe               ( catMaybes )
 import System.Directory
-         ( removeFile, getDirectoryContents, doesFileExist
-         , getTemporaryDirectory )
+         ( removeFile, getDirectoryContents )
 import System.FilePath          ( (</>), (<.>), takeExtension,
-                                  takeDirectory, replaceExtension, splitExtension )
-import System.IO (hClose, hPutStrLn)
-import Config.Exception (catchExit, catchIO)
-import System.Process
-
--- -----------------------------------------------------------------------------
--- Configuring
-
-configure :: Verbosity -> Maybe FilePath -> Maybe FilePath
-          -> ProgramConfiguration -> IO (Compiler, ProgramConfiguration)
-configure verbosity hcPath hcPkgPath conf0 = do
-
-  (ghcProg, ghcVersion, conf1) <-
-    requireProgramVersion verbosity ghcProgram
-      (orLaterVersion (Version [6,4] []))
-      (userMaybeSpecifyPath "ghc" hcPath conf0)
-
-  -- This is slightly tricky, we have to configure ghc first, then we use the
-  -- location of ghc to help find ghc-pkg in the case that the user did not
-  -- specify the location of ghc-pkg directly:
-  (ghcPkgProg, ghcPkgVersion, conf2) <-
-    requireProgramVersion verbosity ghcPkgProgram {
-      programFindLocation = guessGhcPkgFromGhcPath ghcProg
-    }
-    anyVersion (userMaybeSpecifyPath "ghc-pkg" hcPkgPath conf1)
-
-  when (ghcVersion /= ghcPkgVersion) $ die $
-       "Version mismatch between ghc and ghc-pkg: "
-    ++ programPath ghcProg ++ " is version " ++ display ghcVersion ++ " "
-    ++ programPath ghcPkgProg ++ " is version " ++ display ghcPkgVersion
-
-  -- Likewise we try to find the matching hsc2hs program.
-  let hsc2hsProgram' = hsc2hsProgram {
-                           programFindLocation = guessHsc2hsFromGhcPath ghcProg
-                       }
-      conf3 = addKnownProgram hsc2hsProgram' conf2
-
-  languages  <- getLanguages verbosity ghcProg
-  extensions <- getExtensions verbosity ghcProg
-
-  ghcInfo <- if ghcVersion >= Version [6,7] []
-             then do xs <- getProgramOutput verbosity ghcProg ["--info"]
-                     case reads xs of
-                         [(i, ss)]
-                          | all isSpace ss ->
-                             return i
-                         _ ->
-                             die "Can't parse --info output of GHC"
-             else return []
-
-  let comp = Compiler {
-        compilerId             = CompilerId GHC ghcVersion,
-        compilerLanguages      = languages,
-        compilerExtensions     = extensions
-      }
-      conf4 = configureToolchain ghcProg ghcInfo conf3 -- configure gcc and ld
-  return (comp, conf4)
-
--- | Given something like /usr/local/bin/ghc-6.6.1(.exe) we try and find
--- the corresponding tool; e.g. if the tool is ghc-pkg, we try looking
--- for a versioned or unversioned ghc-pkg in the same dir, that is:
---
--- > /usr/local/bin/ghc-pkg-ghc-6.6.1(.exe)
--- > /usr/local/bin/ghc-pkg-6.6.1(.exe)
--- > /usr/local/bin/ghc-pkg(.exe)
---
-guessToolFromGhcPath :: FilePath -> ConfiguredProgram -> Verbosity
-                     -> IO (Maybe FilePath)
-guessToolFromGhcPath tool ghcProg verbosity
-  = do let path              = programPath ghcProg
-           dir               = takeDirectory path
-           versionSuffix     = takeVersionSuffix (dropExeExtension path)
-           guessNormal       = dir </> tool <.> exeExtension
-           guessGhcVersioned = dir </> (tool ++ "-ghc" ++ versionSuffix) <.> exeExtension
-           guessVersioned    = dir </> (tool ++ versionSuffix) <.> exeExtension
-           guesses | null versionSuffix = [guessNormal]
-                   | otherwise          = [guessGhcVersioned,
-                                           guessVersioned,
-                                           guessNormal]
-       info verbosity $ "looking for tool " ++ show tool ++ " near compiler in " ++ dir
-       exists <- mapM doesFileExist guesses
-       case [ file | (file, True) <- zip guesses exists ] of
-         [] -> return Nothing
-         (fp:_) -> do info verbosity $ "found " ++ tool ++ " in " ++ fp
-                      return (Just fp)
-
-  where takeVersionSuffix :: FilePath -> String
-        takeVersionSuffix = reverse . takeWhile (`elem ` "0123456789.-") . reverse
-
-        dropExeExtension :: FilePath -> FilePath
-        dropExeExtension filepath =
-          case splitExtension filepath of
-            (filepath', extension) | extension == exeExtension -> filepath'
-                                   | otherwise                 -> filepath
-
--- | Given something like /usr/local/bin/ghc-6.6.1(.exe) we try and find a
--- corresponding ghc-pkg, we try looking for both a versioned and unversioned
--- ghc-pkg in the same dir, that is:
---
--- > /usr/local/bin/ghc-pkg-ghc-6.6.1(.exe)
--- > /usr/local/bin/ghc-pkg-6.6.1(.exe)
--- > /usr/local/bin/ghc-pkg(.exe)
---
-guessGhcPkgFromGhcPath :: ConfiguredProgram -> Verbosity -> IO (Maybe FilePath)
-guessGhcPkgFromGhcPath = guessToolFromGhcPath "ghc-pkg"
-
--- | Given something like /usr/local/bin/ghc-6.6.1(.exe) we try and find a
--- corresponding hsc2hs, we try looking for both a versioned and unversioned
--- hsc2hs in the same dir, that is:
---
--- > /usr/local/bin/hsc2hs-ghc-6.6.1(.exe)
--- > /usr/local/bin/hsc2hs-6.6.1(.exe)
--- > /usr/local/bin/hsc2hs(.exe)
---
-guessHsc2hsFromGhcPath :: ConfiguredProgram -> Verbosity -> IO (Maybe FilePath)
-guessHsc2hsFromGhcPath = guessToolFromGhcPath "hsc2hs"
-
--- | Adjust the way we find and configure gcc and ld
---
-configureToolchain :: ConfiguredProgram -> [(String, String)]
-                                        -> ProgramConfiguration
-                                        -> ProgramConfiguration
-configureToolchain ghcProg ghcInfo =
-    addKnownProgram gccProgram {
-      programFindLocation = findProg gccProgram
-                              [ if ghcVersion >= Version [6,12] []
-                                  then mingwBinDir </> "gcc.exe"
-                                  else baseDir     </> "gcc.exe" ],
-      programPostConf     = configureGcc
-    }
-  . addKnownProgram ldProgram {
-      programFindLocation = findProg ldProgram
-                              [ if ghcVersion >= Version [6,12] []
-                                  then mingwBinDir </> "ld.exe"
-                                  else libDir      </> "ld.exe" ],
-      programPostConf     = configureLd
-    }
-  . addKnownProgram arProgram {
-      programFindLocation = findProg arProgram
-                              [ if ghcVersion >= Version [6,12] []
-                                  then mingwBinDir </> "ar.exe"
-                                  else libDir      </> "ar.exe" ]
-    }
-  where
-    Just ghcVersion = programVersion ghcProg
-    compilerDir = takeDirectory (programPath ghcProg)
-    baseDir     = takeDirectory compilerDir
-    mingwBinDir = baseDir </> "mingw" </> "bin"
-    libDir      = baseDir </> "gcc-lib"
-    includeDir  = baseDir </> "include" </> "mingw"
-    isWindows   = case buildOS of Windows -> True; _ -> False
-
-    -- on Windows finding and configuring ghc's gcc and ld is a bit special
-    findProg :: Program -> [FilePath] -> Verbosity -> IO (Maybe FilePath)
-    findProg prog locations
-      | isWindows = \verbosity -> look locations verbosity
-      | otherwise = programFindLocation prog
-      where
-        look [] verbosity = do
-          warn verbosity ("Couldn't find " ++ programName prog ++ " where I expected it. Trying the search path.")
-          programFindLocation prog verbosity
-        look (f:fs) verbosity = do
-          exists <- doesFileExist f
-          if exists then return (Just f)
-                    else look fs verbosity
-
-    ccFlags        = getFlags "C compiler flags"
-    gccLinkerFlags = getFlags "Gcc Linker flags"
-    ldLinkerFlags  = getFlags "Ld Linker flags"
-
-    getFlags key = case lookup key ghcInfo of
-                   Nothing -> []
-                   Just flags ->
-                       case reads flags of
-                       [(args, "")] -> args
-                       _ -> [] -- XXX Should should be an error really
-
-    configureGcc :: Verbosity -> ConfiguredProgram -> IO [ProgArg]
-    configureGcc v cp = liftM (++ (ccFlags ++ gccLinkerFlags))
-                      $ configureGcc' v cp
-
-    configureGcc' :: Verbosity -> ConfiguredProgram -> IO [ProgArg]
-    configureGcc'
-      | isWindows = \_ gccProg -> case programLocation gccProg of
-          -- if it's found on system then it means we're using the result
-          -- of programFindLocation above rather than a user-supplied path
-          -- Pre GHC 6.12, that meant we should add these flags to tell
-          -- ghc's gcc where it lives and thus where gcc can find its
-          -- various files:
-          FoundOnSystem {}
-           | ghcVersion < Version [6,11] [] ->
-              return ["-B" ++ libDir, "-I" ++ includeDir]
-          _ -> return []
-      | otherwise = \_ _   -> return []
-
-    configureLd :: Verbosity -> ConfiguredProgram -> IO [ProgArg]
-    configureLd v cp = liftM (++ ldLinkerFlags) $ configureLd' v cp
-
-    -- we need to find out if ld supports the -x flag
-    configureLd' :: Verbosity -> ConfiguredProgram -> IO [ProgArg]
-    configureLd' verbosity ldProg = do
-      tempDir <- getTemporaryDirectory
-      ldx <- withTempFile tempDir ".c" $ \testcfile testchnd ->
-             withTempFile tempDir ".o" $ \testofile testohnd -> do
-               hPutStrLn testchnd "int foo() {}"
-               hClose testchnd; hClose testohnd
-               rawSystemProgram verbosity ghcProg ["-c", testcfile,
-                                                   "-o", testofile]
-               withTempFile tempDir ".o" $ \testofile' testohnd' ->
-                 do
-                   hClose testohnd'
-                   _ <- rawSystemProgramStdout verbosity ldProg
-                     ["-x", "-r", testofile, "-o", testofile']
-                   return True
-                 `catchIO`   (\_ -> return False)
-                 `catchExit` (\_ -> return False)
-      if ldx
-        then return ["-x"]
-        else return []
-
-getLanguages :: Verbosity -> ConfiguredProgram -> IO [(Language, Flag)]
-getLanguages _ ghcProg
-  -- TODO: should be using --supported-languages rather than hard coding
-  | ghcVersion >= Version [7] [] = return [(Haskell98,   "-XHaskell98")
-                                          ,(Haskell2010, "-XHaskell2010")]
-  | otherwise                    = return [(Haskell98,   "")]
-  where
-    Just ghcVersion = programVersion ghcProg
-
-getExtensions :: Verbosity -> ConfiguredProgram -> IO [(Extension, Flag)]
-getExtensions verbosity ghcProg
-  | ghcVersion >= Version [6,7] [] = do
-
-    str <- rawSystemStdout verbosity (programPath ghcProg)
-              ["--supported-languages"]
-    let extStrs = if ghcVersion >= Version [7] []
-                  then lines str
-                  else -- Older GHCs only gave us either Foo or NoFoo,
-                       -- so we have to work out the other one ourselves
-                       [ extStr''
-                       | extStr <- lines str
-                       , let extStr' = case extStr of
-                                       'N' : 'o' : xs -> xs
-                                       _              -> "No" ++ extStr
-                       , extStr'' <- [extStr, extStr']
-                       ]
-    let extensions0 = [ (ext, "-X" ++ display ext)
-                      | Just ext <- map simpleParse extStrs ]
-        extensions1 = if ghcVersion >= Version [6,8]  [] &&
-                         ghcVersion <  Version [6,10] []
-                      then -- ghc-6.8 introduced RecordPuns however it
-                           -- should have been NamedFieldPuns. We now
-                           -- encourage packages to use NamedFieldPuns
-                           -- so for compatability we fake support for
-                           -- it in ghc-6.8 by making it an alias for
-                           -- the old RecordPuns extension.
-                           (EnableExtension  NamedFieldPuns, "-XRecordPuns") :
-                           (DisableExtension NamedFieldPuns, "-XNoRecordPuns") :
-                           extensions0
-                      else extensions0
-        extensions2 = if ghcVersion <  Version [7,1] []
-                      then -- ghc-7.2 split NondecreasingIndentation off
-                           -- into a proper extension. Before that it
-                           -- was always on.
-                           (EnableExtension  NondecreasingIndentation, "") :
-                           (DisableExtension NondecreasingIndentation, "") :
-                           extensions1
-                      else extensions1
-    return extensions2
-
-  | otherwise = return oldLanguageExtensions
-
-  where
-    Just ghcVersion = programVersion ghcProg
-
--- | For GHC 6.6.x and earlier, the mapping from supported extensions to flags
-oldLanguageExtensions :: [(Extension, Flag)]
-oldLanguageExtensions =
-    let doFlag (f, (enable, disable)) = [(EnableExtension  f, enable),
-                                         (DisableExtension f, disable)]
-        fglasgowExts = ("-fglasgow-exts",
-                        "") -- This is wrong, but we don't want to turn
-                            -- all the extensions off when asked to just
-                            -- turn one off
-        fFlag flag = ("-f" ++ flag, "-fno-" ++ flag)
-    in concatMap doFlag
-    [(OverlappingInstances       , fFlag "allow-overlapping-instances")
-    ,(TypeSynonymInstances       , fglasgowExts)
-    ,(TemplateHaskell            , fFlag "th")
-    ,(ForeignFunctionInterface   , fFlag "ffi")
-    ,(MonomorphismRestriction    , fFlag "monomorphism-restriction")
-    ,(MonoPatBinds               , fFlag "mono-pat-binds")
-    ,(UndecidableInstances       , fFlag "allow-undecidable-instances")
-    ,(IncoherentInstances        , fFlag "allow-incoherent-instances")
-    ,(Arrows                     , fFlag "arrows")
-    ,(Generics                   , fFlag "generics")
-    ,(ImplicitPrelude            , fFlag "implicit-prelude")
-    ,(ImplicitParams             , fFlag "implicit-params")
-    ,(CPP                        , ("-cpp", ""{- Wrong -}))
-    ,(BangPatterns               , fFlag "bang-patterns")
-    ,(KindSignatures             , fglasgowExts)
-    ,(RecursiveDo                , fglasgowExts)
-    ,(ParallelListComp           , fglasgowExts)
-    ,(MultiParamTypeClasses      , fglasgowExts)
-    ,(FunctionalDependencies     , fglasgowExts)
-    ,(Rank2Types                 , fglasgowExts)
-    ,(RankNTypes                 , fglasgowExts)
-    ,(PolymorphicComponents      , fglasgowExts)
-    ,(ExistentialQuantification  , fglasgowExts)
-    ,(ScopedTypeVariables        , fFlag "scoped-type-variables")
-    ,(FlexibleContexts           , fglasgowExts)
-    ,(FlexibleInstances          , fglasgowExts)
-    ,(EmptyDataDecls             , fglasgowExts)
-    ,(PatternGuards              , fglasgowExts)
-    ,(GeneralizedNewtypeDeriving , fglasgowExts)
-    ,(MagicHash                  , fglasgowExts)
-    ,(UnicodeSyntax              , fglasgowExts)
-    ,(PatternSignatures          , fglasgowExts)
-    ,(UnliftedFFITypes           , fglasgowExts)
-    ,(LiberalTypeSynonyms        , fglasgowExts)
-    ,(TypeOperators              , fglasgowExts)
-    ,(GADTs                      , fglasgowExts)
-    ,(RelaxedPolyRec             , fglasgowExts)
-    ,(ExtendedDefaultRules       , fFlag "extended-default-rules")
-    ,(UnboxedTuples              , fglasgowExts)
-    ,(DeriveDataTypeable         , fglasgowExts)
-    ,(ConstrainedClassMethods    , fglasgowExts)
-    ]
-
+                                  takeDirectory, replaceExtension )
+import Config.Exception (catchIO)
 
 -- Utilities for fortran
 
