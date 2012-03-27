@@ -496,8 +496,11 @@ runFortranProg args = do
 
 constructFortranCmdLine :: LocalBuildInfo -> BuildInfo -> ComponentLocalBuildInfo
                    -> FilePath -> FilePath -> Verbosity -> Bool -> Bool
-                   -> [String]
-constructFortranCmdLine lbi bi clbi pref filename verbosity dynamic profiling =
+                   ->(FilePath,[String])
+constructFortranCmdLine lbi bi clbi pref filename verbosity dynamic profiling = (path, args)
+  where
+    path = pref </> takeDirectory filename
+    args =
 --         ghcCcOptions lbi bi clbi odir
             (if verbosity >= deafening then ["-v"] else [])
          ++ ["-c",filename]
@@ -573,11 +576,11 @@ buildLib verbosity pkg_descr lbi lib clbi = do
   -- build any fortran sources
   unless (null (fSources libBi)) $ do
      info verbosity "Building fortran Sources..."
-     sequence_ [do let args = constructFortranCmdLine lbi libBi clbi pref
+     sequence_ [do let (odir,args) = constructFortranCmdLine lbi libBi clbi pref
                                                         filename verbosity
                                                         False
                                                         (withProfLib lbi)
-                   createDirectoryIfMissingVerbose verbosity True pref
+                   createDirectoryIfMissingVerbose verbosity True odir
                    runFortranProg args
 --                   ifSharedLib (runFortranProg (args ++ ["-fPIC", "-osuf dyn_o"]))
                | filename <- fSources libBi]
