@@ -85,6 +85,8 @@ import Distribution.Simple.GHC (
         ghcLibDir,
     )
 
+import Config.Program
+
 import Distribution.Compat.ReadP
 import Distribution.PackageDescription as PD
          ( PackageDescription(..), BuildInfo(..)
@@ -488,12 +490,6 @@ fSources BuildInfo { customFieldsBI = custom } =
   where
     expand = filter (/= "") . map trim . splitUp
 
-runFortranProg :: [String] -> IO ()
-runFortranProg args = do
-    print args
-    runProcess "gfortran" args Nothing Nothing Nothing Nothing Nothing >>= waitForProcess
-    return ()
-
 constructFortranCmdLine :: LocalBuildInfo -> BuildInfo -> ComponentLocalBuildInfo
                    -> FilePath -> FilePath -> Verbosity -> Bool -> Bool
                    ->(FilePath,[String])
@@ -522,6 +518,7 @@ buildLib verbosity pkg_descr lbi lib clbi = do
   let pref = buildDir lbi
       pkgid = packageId pkg_descr
       runGhcProg = rawSystemProgramConf verbosity ghcProgram (withPrograms lbi)
+      runFortranProg = rawSystemProgramConf verbosity gfortranProgram (withPrograms lbi)
       ifVanillaLib forceVanilla = when (forceVanilla || withVanillaLib lbi)
       ifProfLib = when (withProfLib lbi)
       ifSharedLib = when (withSharedLib lbi)
@@ -572,7 +569,6 @@ buildLib verbosity pkg_descr lbi lib clbi = do
                    ifSharedLib (runGhcProg (args ++ ["-fPIC", "-osuf dyn_o"]))
                | filename <- cSources libBi]
 
-  mapM_ print $ fSources libBi
   -- build any fortran sources
   unless (null (fSources libBi)) $ do
      info verbosity "Building fortran Sources..."
