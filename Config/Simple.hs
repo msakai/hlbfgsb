@@ -1,6 +1,6 @@
-module Simple where
+module Config.Simple where
 
-import Build
+import Config.Build as Build
 
 import Distribution.Simple
 import Distribution.Simple.Setup(BuildFlags(..))

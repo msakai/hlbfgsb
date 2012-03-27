@@ -61,7 +61,7 @@ THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. -}
 
-module GHC (
+module Config.GHC (
         configure, getInstalledPackages,
         buildLib, buildExe,
         installLib, installExe,
@@ -137,7 +137,7 @@ import System.Directory
 import System.FilePath          ( (</>), (<.>), takeExtension,
                                   takeDirectory, replaceExtension, splitExtension )
 import System.IO (hClose, hPutStrLn)
-import Exception (catchExit, catchIO)
+import Config.Exception (catchExit, catchIO)
 import System.Process
 
 -- -----------------------------------------------------------------------------

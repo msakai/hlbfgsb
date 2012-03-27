@@ -10,8 +10,8 @@
 #define NEW_EXCEPTION
 #endif
 
-module Exception (
-     E.IOException,
+module Config.Exception (
+     Exception.IOException,
      onException,
      catchIO,
      catchExit,
@@ -20,43 +20,43 @@ module Exception (
   ) where
 
 import System.Exit
-import qualified Control.Exception as E
+import qualified Control.Exception as Exception
 
 onException :: IO a -> IO b -> IO a
 #ifdef NEW_EXCEPTION
-onException = E.onException
+onException = Exception.onException
 #else
-onException io what = io `E.catch` \e -> do what
-                                                    E.throw e
+onException io what = io `Exception.catch` \e -> do what
+                                                    Exception.throw e
 #endif
 
-throwIOIO :: E.IOException -> IO a
+throwIOIO :: Exception.IOException -> IO a
 #ifdef NEW_EXCEPTION
-throwIOIO = E.throwIO
+throwIOIO = Exception.throwIO
 #else
-throwIOIO = E.throwIO . E.IOException
+throwIOIO = Exception.throwIO . Exception.IOException
 #endif
 
-tryIO :: IO a -> IO (Either E.IOException a)
+tryIO :: IO a -> IO (Either Exception.IOException a)
 #ifdef NEW_EXCEPTION
-tryIO = E.try
+tryIO = Exception.try
 #else
-tryIO = E.tryJust E.ioErrors
+tryIO = Exception.tryJust Exception.ioErrors
 #endif
 
-catchIO :: IO a -> (E.IOException -> IO a) -> IO a
+catchIO :: IO a -> (Exception.IOException -> IO a) -> IO a
 #ifdef NEW_EXCEPTION
-catchIO = E.catch
+catchIO = Exception.catch
 #else
-catchIO = E.catchJust E.ioErrors
+catchIO = Exception.catchJust Exception.ioErrors
 #endif
 
 catchExit :: IO a -> (ExitCode -> IO a) -> IO a
 #ifdef NEW_EXCEPTION
-catchExit = E.catch
+catchExit = Exception.catch
 #else
-catchExit = E.catchJust exitExceptions
-    where exitExceptions (E.ExitException ee) = Just ee
+catchExit = Exception.catchJust exitExceptions
+    where exitExceptions (Exception.ExitException ee) = Just ee
           exitExceptions _                            = Nothing
 #endif
 
