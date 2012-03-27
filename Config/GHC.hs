@@ -582,7 +582,7 @@ buildLib verbosity pkg_descr lbi lib clbi = do
                                                         (withProfLib lbi)
                    createDirectoryIfMissingVerbose verbosity True odir
                    runFortranProg args
---                   ifSharedLib (runFortranProg (args ++ ["-fPIC", "-osuf dyn_o"]))
+                   ifSharedLib (runFortranProg (args ++ ["-fPIC", "-osuf dyn_o"]))
                | filename <- fSources libBi]
 
   -- link:
