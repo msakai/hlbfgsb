@@ -1,6 +1,7 @@
 module Lbfgsb
-
-where
+    ( lbfgsb
+    , lbfgsbFG
+) where
 
 import Control.Arrow ((&&&),(***))
 import Control.Monad
