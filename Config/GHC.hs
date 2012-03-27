@@ -161,12 +161,12 @@ constructFortranCmdLine lbi bi clbi pref filename verbosity dynamic profiling = 
     args =
 --         ghcCcOptions lbi bi clbi odir
             (if verbosity >= deafening then ["-v"] else [])
+         ++ (case withOptimization lbi of
+                NoOptimisation      -> []
+                NormalOptimisation  -> ["-O"]
+                MaximumOptimisation -> ["-O2"])
          ++ ["-c",filename]
-	 ++ ["-o", pref </> filename `replaceExtension` ".o" ]
-         -- Note: When building with profiling enabled, we pass the -prof
-         -- option to ghc here when compiling C code, so that the PROFILING
-         -- macro gets defined. The macro is used in ghc's Rts.h in the
-         -- definitions of closure layouts (Closures.h).
+         ++ ["-o", pref </> filename `replaceExtension` ".o" ]
          ++ ["-dynamic" | dynamic]
 
 -- -----------------------------------------------------------------------------
