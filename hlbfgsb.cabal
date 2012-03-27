@@ -18,8 +18,9 @@ library
   default-language: Haskell2010
   build-depends: base,
                  vector >= 0.9
+  hs-source-dirs: src
   extra-libraries: gfortran
-  x-fortran-sources: blas.f,
-                     lbfgsb.f,
-                     linpack.f,
-                     timer.f
+  x-fortran-sources: src/blas.f,
+                     src/lbfgsb.f,
+                     src/linpack.f,
+                     src/timer.f
