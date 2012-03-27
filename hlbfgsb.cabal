@@ -12,6 +12,17 @@ category:            Math
 build-type:          Custom
 cabal-version:       >=1.10
 
+extra-source-files:
+    Config/Build.hs,
+    Config/Exception.hs,
+    Config/GHC.hs,
+    Config/Program.hs,
+    Config/Simple.hs,
+    src/blas.f,
+    src/lbfgsb.f,
+    src/linpack.f,
+    src/timer.f
+
 library
   exposed-modules:     Lbfgsb
   -- other-modules:
