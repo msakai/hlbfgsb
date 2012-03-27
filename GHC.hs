@@ -76,9 +76,9 @@ module GHC (
 import Distribution.Simple.GHC (
         {-configure,-} getInstalledPackages,
         {-buildLib,-} buildExe,
-        {-installLib,-} installExe,
---        libAbiHash,
---        registerPackage,
+        installLib, installExe,
+        libAbiHash,
+        registerPackage,
         ghcOptions,
         ghcVerbosityOptions,
         ghcPackageDbOptions,
@@ -722,23 +722,6 @@ getHaskellObjects lib lbi pref wanted_obj_ext allow_split_objs
         return [ pref </> ModuleName.toFilePath x <.> wanted_obj_ext
                | x <- libModules lib ]
 
--- | Extracts a String representing a hash of the ABI of a built
--- library.  It can fail if the library has not yet been built.
---
-libAbiHash :: Verbosity -> PackageDescription -> LocalBuildInfo
-           -> Library -> ComponentLocalBuildInfo -> IO String
-libAbiHash verbosity pkg_descr lbi lib clbi = do
-  libBi <- hackThreadedFlag verbosity
-             (compiler lbi) (withProfLib lbi) (libBuildInfo lib)
-  let
-      ghcArgs =
-             "--abi-hash"
-          :  ["-package-name", display (packageId pkg_descr) ]
-          ++ constructGHCCmdLine lbi libBi clbi (buildDir lbi) verbosity
-          ++ map display (exposedModules lib)
-  --
-  rawSystemProgramStdoutConf verbosity ghcProgram (withPrograms lbi) ghcArgs
-
 
 constructGHCCmdLine
         :: LocalBuildInfo
@@ -798,83 +781,3 @@ ghcCcOptions lbi bi clbi odir
 mkGHCiLibName :: PackageIdentifier -> String
 mkGHCiLibName lib = "HS" ++ display lib <.> "o"
 
--- -----------------------------------------------------------------------------
--- Installing
-
--- |Install for ghc, .hi, .a and, if --with-ghci given, .o
-installLib    :: Verbosity
-              -> LocalBuildInfo
-              -> FilePath  -- ^install location
-              -> FilePath  -- ^install location for dynamic librarys
-              -> FilePath  -- ^Build location
-              -> PackageDescription
-              -> Library
-              -> IO ()
-installLib verbosity lbi targetDir dynlibTargetDir builtDir pkg lib = do
-  -- copy .hi files over:
-  let copyHelper installFun src dst n = do
-        createDirectoryIfMissingVerbose verbosity True dst
-        installFun verbosity (src </> n) (dst </> n)
-      copy       = copyHelper installOrdinaryFile
-      copyShared = copyHelper installExecutableFile
-      copyModuleFiles ext =
-        findModuleFiles [builtDir] [ext] (libModules lib)
-          >>= installOrdinaryFiles verbosity targetDir
-  ifVanilla $ copyModuleFiles "hi"
-  ifProf    $ copyModuleFiles "p_hi"
-  ifShared  $ copyModuleFiles "dyn_hi"
-
-  -- copy the built library files over:
-  ifVanilla $ copy builtDir targetDir vanillaLibName
-  ifProf    $ copy builtDir targetDir profileLibName
-  ifGHCi    $ copy builtDir targetDir ghciLibName
-  ifShared  $ copyShared builtDir dynlibTargetDir sharedLibName
-
-  -- run ranlib if necessary:
-  ifVanilla $ updateLibArchive verbosity lbi
-                               (targetDir </> vanillaLibName)
-  ifProf    $ updateLibArchive verbosity lbi
-                               (targetDir </> profileLibName)
-
-  where
-    vanillaLibName = mkLibName pkgid
-    profileLibName = mkProfLibName pkgid
-    ghciLibName    = mkGHCiLibName pkgid
-    sharedLibName  = mkSharedLibName pkgid (compilerId (compiler lbi))
-
-    pkgid          = packageId pkg
-
-    hasLib    = not $ null (libModules lib)
-                   && null (cSources (libBuildInfo lib))
-    ifVanilla = when (hasLib && withVanillaLib lbi)
-    ifProf    = when (hasLib && withProfLib    lbi)
-    ifGHCi    = when (hasLib && withGHCiLib    lbi)
-    ifShared  = when (hasLib && withSharedLib  lbi)
-
--- | On MacOS X we have to call @ranlib@ to regenerate the archive index after
--- copying. This is because the silly MacOS X linker checks that the archive
--- index is not older than the file itself, which means simply
--- copying/installing the file breaks it!!
---
-updateLibArchive :: Verbosity -> LocalBuildInfo -> FilePath -> IO ()
-updateLibArchive verbosity lbi path
-  | buildOS == OSX = do
-    (ranlib, _) <- requireProgram verbosity ranlibProgram (withPrograms lbi)
-    rawSystemProgram verbosity ranlib [path]
-  | otherwise = return ()
-
-
--- -----------------------------------------------------------------------------
--- Registering
-
-registerPackage
-  :: Verbosity
-  -> InstalledPackageInfo
-  -> PackageDescription
-  -> LocalBuildInfo
-  -> Bool
-  -> PackageDBStack
-  -> IO ()
-registerPackage verbosity installedPkgInfo _pkg lbi _inplace packageDbs = do
-  let Just ghcPkg = lookupProgram ghcPkgProgram (withPrograms lbi)
-  HcPkg.reregister verbosity ghcPkg packageDbs (Right installedPkgInfo)
