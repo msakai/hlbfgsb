@@ -9,7 +9,8 @@ import Data.Maybe
 import qualified Data.Vector.Generic as V
 import qualified Data.Vector as BV
 import qualified Data.Vector.Storable as SV
-import Foreign
+import Foreign hiding (unsafePerformIO)
+import System.IO.Unsafe (unsafePerformIO)
 
 readTask :: Int -> Ptr Word8 -> IO String
 readTask n a = do
@@ -30,14 +31,24 @@ expandConstraints cs = unzip3 . map conv $ cs
     conv (Just x, Just y) = (x, y, 2)
     conv (Nothing, Just y) = (47, y, 3)
 
-minimize :: Int                                               -- m
-         -> Double                                            -- factr
-         -> Double                                            -- pgtol
+minimize :: Int                                               -- m - number of past iterations
+         -> Double                                            -- factr - accuracy factor e.g. 1e3
+         -> Double                                            -- pgtol - gradiant tolerance e.g. 1e-10
          -> SV.Vector Double                                  -- x
          -> [(Maybe Double, Maybe Double)]                    -- bounds
          -> (SV.Vector Double -> (Double, SV.Vector Double))  -- fg
-         -> IO (SV.Vector Double)
-minimize m factr pgtol x bounds fg =
+         -> SV.Vector Double
+minimize m factr pgtol x bounds fg = unsafePerformIO $ minimizeIO (-1) m factr pgtol x bounds fg
+
+minimizeIO :: Int                                               -- verbosity
+           -> Int                                               -- m
+           -> Double                                            -- factr
+           -> Double                                            -- pgtol
+           -> SV.Vector Double                                  -- x
+           -> [(Maybe Double, Maybe Double)]                    -- bounds
+           -> (SV.Vector Double -> (Double, SV.Vector Double))  -- fg
+           -> IO (SV.Vector Double)
+minimizeIO verbosity m factr pgtol x bounds fg =
     with n $ \n' ->
     with m $ \m' ->
     withArray (V.toList x) $ \x' ->
@@ -51,7 +62,7 @@ minimize m factr pgtol x bounds fg =
     allocaArray ((2*m+5)*n + 11*m*m + 8*m) $ \wa ->
     allocaArray (3*n + 470) $ \iwa ->
     withArray sTART $ \task ->
-    with (-1) $ \iprint ->
+    with verbosity $ \iprint ->
     allocaArray 60 $ \csave ->
     allocaArray 4 $ \lsave ->
     allocaArray 44 $ \isave ->
@@ -61,18 +72,19 @@ minimize m factr pgtol x bounds fg =
   where
     loop n' m' x' l u nbd f g factr' pgtol' wa iwa task iprint csave lsave isave dsave = loop'
       where
-	loop' = do
-	    setulb_ n' m' x' l u nbd f g factr' pgtol' wa iwa task iprint csave lsave isave dsave 60 60
-	    print =<< readTask 50 task
-	    readTask 5 task >>= \t -> case t of
-		'F':'G':_ -> updateFg >> loop'
-		"NEW_X" -> (print =<< readDoubles n x') >> updateFg >> loop'
-		_ -> readDoubles n x'
-	updateFg = do
-	    xs <- readDoubles n x'
-	    let (fnew, gnew) = fg xs
-	    poke f fnew
-	    pokeArray g (V.toList gnew)
+        loop' = do
+            setulb_ n' m' x' l u nbd f g factr' pgtol' wa iwa task iprint csave lsave isave dsave 60 60
+            when (verbosity > 1) $ print =<< readTask 50 task
+            readTask 5 task >>= \t -> case t of
+                'F':'G':_ -> updateFg >> loop'
+                "NEW_X" -> (when (verbosity > 1) $ print =<< readDoubles n x') >>
+                           updateFg >> loop'
+                _ -> readDoubles n x'
+        updateFg = do
+            xs <- readDoubles n x'
+            let (fnew, gnew) = fg xs
+            poke f fnew
+            pokeArray g (V.toList gnew)
 
     n = V.length x
     readDoubles :: Int -> Ptr Double -> IO (SV.Vector Double)
