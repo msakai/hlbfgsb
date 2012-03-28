@@ -43,5 +43,7 @@ test-suite test
     build-depends: base,
                    vector >= 0.9,
                    hlbfgsb,
-                   HUnit
+                   HUnit,
+                   test-framework,
+                   test-framework-hunit
     hs-source-dirs: test

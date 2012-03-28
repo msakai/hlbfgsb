@@ -1,42 +1,40 @@
+import Test.Framework (defaultMain, testGroup)
+import Test.Framework.Providers.HUnit
+
 import Test.HUnit
 
+import Numeric.Lbfgsb
+
 import Control.Monad
-import System.Exit
 import Control.Arrow (second, (***))
 import qualified Data.Vector.Generic as V
-import System.IO
-import System.IO.Unsafe
 
-import Numeric.Lbfgsb
+main = defaultMain tests
+
+tests = [
+        testGroup "Basic tests" [
+                testCase "list" test1,
+                testCase "vector" test2
+            ]
+    ]
 
 fg [x,y] = ((x-4)*(x-3) + (y-2)*(y-1), [(x-4)+(x-3), (y-2)+(y-1)])
 
 vectorize fg' = second V.fromList . fg' . V.toList
 
-neg = negate *** map negate
+test1 = [3.5, 1.5] @=? minimize 3 1e3 1e-20 [47, 47] [] fg
 
-test1 = TestCase (assertEqual "minimize (x-4)(x-3) + (y-2)(y-1)"
-                              [3.5, 1.5]
-                              (V.toList $ minimize 3 1e3 1e-20 (V.fromList [47, 47]) [] (vectorize fg)))
+test2 = [3.5, 1.5] @=? (V.toList $ minimizeV 3 1e3 1e-20 (V.fromList [47, 47]) [] (vectorize fg))
 
-tests = TestList [TestLabel "test on f(x,y) = (x-4)(x-3) + (y-2)(y-1)" test1]
-
-main :: IO ()
-main = do
-    counts <- runTestTT tests
-    when (errors counts + failures counts > 0)
-        exitFailure
-
---    print $ minimize NMSimplex2 1e-6 100 [100,100] (fst . fg) [47,47]
 --    print =<< lbfgsb 5 1e7 1e-5 (V.fromList . replicate 25 $ 3) (map bnd [1..25]) (vectorize (p fg2))
 
 bnd n |     odd n = (Just 1, Just 100)
       | otherwise = (Just 1, Just 100)
 
-p f x = unsafePerformIO $ do
---    print r
+{-p f x = unsafePerformIO $ do
+    print r
     return r
-  where r = f x
+  where r = f x -}
 
 fg2 :: [Double] -> (Double, [Double])
 fg2 xs = (f xs, g)
