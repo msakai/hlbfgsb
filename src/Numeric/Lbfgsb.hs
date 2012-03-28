@@ -6,9 +6,7 @@ module Numeric.Lbfgsb
 import Control.Arrow hiding (loop)
 import Control.Monad
 import Data.Char
-import Data.Maybe
 import qualified Data.Vector.Generic as V
-import qualified Data.Vector as BV
 import qualified Data.Vector.Storable as SV
 import Foreign hiding (unsafePerformIO)
 import System.IO.Unsafe (unsafePerformIO)
@@ -17,11 +15,6 @@ readTask :: Int -> Ptr Word8 -> IO String
 readTask n a = do
      s <- peekArray n a
      return $ map (chr . fromIntegral) s
-
-taskEq :: Ptr Word8 -> String -> IO Bool
-taskEq ptr str = do
-    a <- peekArray (length str) ptr
-    return $ a == map (fromIntegral . ord) str
 
 expandConstraints :: [(Maybe Double, Maybe Double)]
                   -> ([Double], [Double], [Int])
