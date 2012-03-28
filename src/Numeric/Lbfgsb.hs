@@ -1,7 +1,6 @@
-module Lbfgsb
-    ( lbfgsb
-    , lbfgsbFG
-) where
+module Numeric.Lbfgsb
+    ( minimize
+    ) where
 
 import Control.Arrow ((&&&),(***))
 import Control.Monad
@@ -22,16 +21,6 @@ taskEq ptr str = do
     a <- peekArray (length str) ptr
     return $ a == map (fromIntegral . ord) str
 
-lbfgsbFG :: Int
-         -> Double
-         -> Double
-         -> SV.Vector Double
-         -> [(Maybe Double, Maybe Double)]
-         -> (SV.Vector Double -> Double)
-         -> (SV.Vector Double -> SV.Vector Double)
-         -> IO (SV.Vector Double)
-lbfgsbFG m factr pgtol x bounds f g = lbfgsb m factr pgtol x bounds (f &&& g)
-
 expandConstraints :: [(Maybe Double, Maybe Double)]
                   -> ([Double], [Double], [Int])
 expandConstraints cs = unzip3 . map conv $ cs
@@ -41,14 +30,14 @@ expandConstraints cs = unzip3 . map conv $ cs
     conv (Just x, Just y) = (x, y, 2)
     conv (Nothing, Just y) = (47, y, 3)
 
-lbfgsb :: Int                                               -- m
-       -> Double                                            -- factr
-       -> Double                                            -- pgtol
-       -> SV.Vector Double                                  -- x
-       -> [(Maybe Double, Maybe Double)]                    -- bounds
-       -> (SV.Vector Double -> (Double, SV.Vector Double))  -- fg
-       -> IO (SV.Vector Double)
-lbfgsb m factr pgtol x bounds fg =
+minimize :: Int                                               -- m
+         -> Double                                            -- factr
+         -> Double                                            -- pgtol
+         -> SV.Vector Double                                  -- x
+         -> [(Maybe Double, Maybe Double)]                    -- bounds
+         -> (SV.Vector Double -> (Double, SV.Vector Double))  -- fg
+         -> IO (SV.Vector Double)
+minimize m factr pgtol x bounds fg =
     with n $ \n' ->
     with m $ \m' ->
     withArray (V.toList x) $ \x' ->
