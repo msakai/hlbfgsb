@@ -1,10 +1,13 @@
+import Test.HUnit
+
+import Control.Monad
+import System.Exit
 import Control.Arrow (second, (***))
 import qualified Data.Vector.Generic as V
-import Numeric.GSL.Minimization
 import System.IO
 import System.IO.Unsafe
 
-import Lbfgsb
+import Numeric.Lbfgsb
 
 fg [x,y] = ((x-4)*(x-3) + (y-2)*(y-1), [(x-4)+(x-3), (y-2)+(y-1)])
 
@@ -12,10 +15,18 @@ vectorize fg' = second V.fromList . fg' . V.toList
 
 neg = negate *** map negate
 
-test :: IO ()
-test = do
-    hSetBuffering stdout NoBuffering
-    print =<< lbfgsb 3 1e3 1e-10 (V.fromList [47, 47]) [] (vectorize fg)
+test1 = TestCase (assertEqual "minimize (x-4)(x-3) + (y-2)(y-1)"
+                              [3.5, 1.5]
+                              (V.toList $ minimize 3 1e3 1e-20 (V.fromList [47, 47]) [] (vectorize fg)))
+
+tests = TestList [TestLabel "test on f(x,y) = (x-4)(x-3) + (y-2)(y-1)" test1]
+
+main :: IO ()
+main = do
+    counts <- runTestTT tests
+    when (errors counts + failures counts > 0)
+        exitFailure
+
 --    print $ minimize NMSimplex2 1e-6 100 [100,100] (fst . fg) [47,47]
 --    print =<< lbfgsb 5 1e7 1e-5 (V.fromList . replicate 25 $ 3) (map bnd [1..25]) (vectorize (p fg2))
 
@@ -41,5 +52,3 @@ fg2 xs = (f xs, g)
 
 
 
-main :: IO ()
-main = test

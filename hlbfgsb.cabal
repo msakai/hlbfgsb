@@ -35,3 +35,13 @@ library
                      src/lbfgsb.f,
                      src/linpack.f,
                      src/timer.f
+
+test-suite test
+    type:       exitcode-stdio-1.0
+    main-is:    Tests.hs
+    default-language: Haskell2010
+    build-depends: base,
+                   vector >= 0.9,
+                   hlbfgsb,
+                   HUnit
+    hs-source-dirs: test
