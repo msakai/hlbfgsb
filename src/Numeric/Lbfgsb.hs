@@ -1,8 +1,9 @@
 module Numeric.Lbfgsb
     ( minimize
+    , minimizeV
     ) where
 
-import Control.Arrow ((&&&),(***))
+import Control.Arrow hiding (loop)
 import Control.Monad
 import Data.Char
 import Data.Maybe
@@ -31,14 +32,29 @@ expandConstraints cs = unzip3 . map conv $ cs
     conv (Just x, Just y) = (x, y, 2)
     conv (Nothing, Just y) = (47, y, 3)
 
-minimize :: Int                                               -- m - number of past iterations
-         -> Double                                            -- factr - accuracy factor e.g. 1e3
-         -> Double                                            -- pgtol - gradiant tolerance e.g. 1e-10
-         -> SV.Vector Double                                  -- x
-         -> [(Maybe Double, Maybe Double)]                    -- bounds
-         -> (SV.Vector Double -> (Double, SV.Vector Double))  -- fg
-         -> SV.Vector Double
-minimize m factr pgtol x bounds fg = unsafePerformIO $ minimizeIO (-1) m factr pgtol x bounds fg
+vectorize :: ([Double] -> (Double, [Double])) -> SV.Vector Double -> (Double, SV.Vector Double)
+vectorize fg = second V.fromList . fg . V.toList
+
+unvectorize :: (SV.Vector Double -> (Double, SV.Vector Double)) -> [Double] -> (Double, [Double])
+unvectorize fg = second V.toList . fg . V.fromList
+
+minimizeV :: Int                                               -- m - number of past iterations
+          -> Double                                            -- factr - accuracy factor e.g. 1e3
+          -> Double                                            -- pgtol - gradiant tolerance e.g. 1e-10
+          -> SV.Vector Double                                  -- x
+          -> [(Maybe Double, Maybe Double)]                    -- bounds
+          -> (SV.Vector Double -> (Double, SV.Vector Double))  -- fg
+          -> SV.Vector Double
+minimizeV m factr pgtol x bounds fg = unsafePerformIO $ minimizeIO (-1) m factr pgtol x bounds fg
+
+minimize :: Int
+         -> Double
+         -> Double
+         -> [Double]
+         -> [(Maybe Double, Maybe Double)]
+         -> ([Double] -> (Double, [Double]))
+         -> [Double]
+minimize m factr pgtol x bounds fg = V.toList $ minimizeV m factr pgtol (V.fromList x) bounds (vectorize fg)
 
 minimizeIO :: Int                                               -- verbosity
            -> Int                                               -- m
