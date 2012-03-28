@@ -15,6 +15,9 @@ tests = [
         testGroup "Basic tests" [
                 testCase "list" test1,
                 testCase "vector" test2
+            ],
+        testGroup "Tests from Nocedal" [
+                testCase "n=25,m=5" (testNoced 25)
             ]
     ]
 
@@ -26,27 +29,59 @@ test1 = [3.5, 1.5] @=? minimize 3 1e3 1e-20 [47, 47] [] bisquare
 
 test2 = [3.5, 1.5] @=? (V.toList $ minimizeV 3 1e3 1e-20 (V.fromList [47, 47]) [] (vectorize bisquare))
 
---    print =<< lbfgsb 5 1e7 1e-5 (V.fromList . replicate 25 $ 3) (map bnd [1..25]) (vectorize (p fg2))
+testNoced n = [] @=? (minimize 5 1e3 1e-5 (start n) (bounds n) (calcF n &&& calcG n))
 
-bnd n |     odd n = (Just 1, Just 100)
-      | otherwise = (Just 1, Just 100)
+bnd i |     odd i = (Just    1, Just 100)
+      |    even i = (Just (-1), Just 100)
 
-{-p f x = unsafePerformIO $ do
-    print r
-    return r
-  where r = f x -}
+bounds n = map bnd [1..n]
 
-fg2 :: [Double] -> (Double, [Double])
-fg2 xs = (f xs, g)
+start n = replicate n 3
+
+{-
+init        f=.25d0*( x(1)-1.d0 )**2
+do12        do 20 i=2, n
+step           f = f + ( x(i)-x(i-1 )**2 )**2
+continue    continue
+end         f = 4.d0*f
+-}
+calcF n x' = init
   where
-    f xs@(x:xs')= ((0.25*(x-1)**2) + sm (zip xs' xs)) * 4
-    sm :: [(Double, Double)] -> Double
-    sm = sum . map (\(x2, x1) -> (x2 - x1**2)**2)
-    g = map (\n -> let dx = xs !! n * 1e-8 in (f (atp dx n xs) - f xs) / dx) [0..(length xs - 1)]
+    x = 0:x'
+    init         = do1 (0.25 * ((x !! 1) - 1) ** 2)
+    do1      f   = do2 f 2
+    do2      f i
+     | i <= n    = step f i
+     | otherwise = end  f
+    step     f i = continue (f + ( (x!!i)-(x !! (i-1) )**2 )**2) i
+    continue f i = do2 f (i+1)
+    end      f = 4 * f
 
-    atp d n xs = zipWith (+) xs (replicate n 0 ++ d:repeat 0)
---    t = xs !! 1 - x ** 2 : (map (\x2 x1 -> x2 - x1 ** 2) . tail) . (zip xs' xs)
---    g = ((2*(x-1)-1.6*x*(t!!0)) : map (\t2 t1 x1 -> 8*t2 - 1.6*x1*t1) . zip3 t (tail t) $ g) ++ 8 * last t
+{-
+init     t1=x(2)-x(1)**2
+line1    g(1)=2.d0*(x(1)-1.d0)-1.6d1*x(1)*t1
+do12     do 22 i=2,n-1
+step1       t2=t1
+step2       t1=x(i+1)-x(i)**2
+step3       g(i)=8.d0*t2-1.6d1*x(i)*t1
+continue continue
+end      g(n)=8.d0*t1
+-}
 
 
+xs =!! (i, x) = take i (xs ++ repeat 0) ++ (x : drop (i+1) xs)
 
+calcG n x' = init
+  where
+    x = 0:x'
+    init               = line1 ((x!!2)-(x!!1)**2)
+    line1    t1        = do1 t1 ([] =!! (1,2*((x!!1)-1)-16*(x!!1)*t1))
+    do1      t1 g      = do2 t1 g 2
+    do2      t1 g i
+           | i <= n-1  = step1 t1 g i
+           | otherwise = end t1 g
+    step1    t1 g i    = step2 t1 g i t1
+    step2    t1 g i t2 = step3 ((x !! (i+1)) - (x !! i) ** 2) g i t2
+    step3    t1 g i t2 = continue t1 (g =!! (i, (8*t2-16*(x!!i)*t1))) i
+    continue t1 g i    = do2 t1 g (i+1)
+    end      t1 g = tail $ (g =!! (n, 8*t1))
