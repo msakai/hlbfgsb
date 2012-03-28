@@ -6,7 +6,7 @@ import Test.HUnit
 import Numeric.Lbfgsb
 
 import Control.Monad
-import Control.Arrow (second, (***))
+import Control.Arrow
 import qualified Data.Vector.Generic as V
 
 main = defaultMain tests
@@ -18,13 +18,13 @@ tests = [
             ]
     ]
 
-fg [x,y] = ((x-4)*(x-3) + (y-2)*(y-1), [(x-4)+(x-3), (y-2)+(y-1)])
+bisquare [x,y] = ((x-4)*(x-3) + (y-2)*(y-1), [(x-4)+(x-3), (y-2)+(y-1)])
 
-vectorize fg' = second V.fromList . fg' . V.toList
+vectorize fg = second V.fromList . fg . V.toList
 
-test1 = [3.5, 1.5] @=? minimize 3 1e3 1e-20 [47, 47] [] fg
+test1 = [3.5, 1.5] @=? minimize 3 1e3 1e-20 [47, 47] [] bisquare
 
-test2 = [3.5, 1.5] @=? (V.toList $ minimizeV 3 1e3 1e-20 (V.fromList [47, 47]) [] (vectorize fg))
+test2 = [3.5, 1.5] @=? (V.toList $ minimizeV 3 1e3 1e-20 (V.fromList [47, 47]) [] (vectorize bisquare))
 
 --    print =<< lbfgsb 5 1e7 1e-5 (V.fromList . replicate 25 $ 3) (map bnd [1..25]) (vectorize (p fg2))
 
