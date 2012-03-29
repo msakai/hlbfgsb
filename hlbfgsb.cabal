@@ -57,3 +57,12 @@ test-suite test
                    test-framework,
                    test-framework-hunit
     hs-source-dirs: test
+
+source-repository head
+  type:     darcs
+  location: http://people.ksp.sk/~ivan/hlbfgsb
+
+source-repository this
+  type:     darcs
+  location: http://people.ksp.sk/~ivan/hlbfgsb
+  tag:      0.1.0.0
