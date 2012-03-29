@@ -31,7 +31,8 @@ extra-source-files:
     Config/Simple.hs,
     src/blas.f,
     src/lbfgsb.f,
-    src/linpack.f
+    src/linpack.f,
+    lbfgsb.html
 
 library
   exposed-modules:     Numeric.Lbfgsb
