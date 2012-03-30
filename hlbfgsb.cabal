@@ -2,16 +2,16 @@ name:                hlbfgsb
 version:             0.1.0.0
 synopsis:            Haskell binding to L-BFGS-B version 3.0
 description:
-	Haskell bindings to Nocedal's 3.0 version
+    Haskell bindings to Nocedal's 3.0 version
     of the Limited memory - Broyden Fletcher Goldfarb Shanno - Bounded
     optimization algorithm.
-
-	From homepage:
+    .
+    From homepage:
     Software for Large-scale Bound-constrained Optimization L-BFGS-B is a
     limited-memory quasi-Newton code for bound-constrained optimization, i.e.
     for problems where the only constraints are of the form l <= x <= u. The
     current release is version 3.0. The distribution file was last changed on
-    02/08/11.
+    2011-08-02.
 
 homepage:            http://people.ksp.sk/~ivan/hlbfgsb
 license:	     BSD3
