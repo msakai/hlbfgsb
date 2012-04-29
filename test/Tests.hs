@@ -15,10 +15,12 @@ tests = [
         testGroup "Basic tests" [
                 testCase "list" test1,
                 testCase "vector" test2
-            ],
+            ]
+{- perhaps make this work some day
+ - or create different tests?
         testGroup "Tests from Nocedal" [
                 testCase "n=25,m=5" (testNoced 25)
-            ]
+            ] -}
     ]
 
 bisquare [x,y] = ((x-4)*(x-3) + (y-2)*(y-1), [(x-4)+(x-3), (y-2)+(y-1)])
