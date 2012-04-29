@@ -41,6 +41,7 @@ library
                  vector >= 0.9
   hs-source-dirs: src
   extra-libraries: gfortran
+  build-tools: gfortran
   x-fortran-sources: src/blas.f,
                      src/lbfgsb.f,
                      src/linpack.f
